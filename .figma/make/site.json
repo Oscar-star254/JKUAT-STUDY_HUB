@@ -1,0 +1,10 @@
+{
+  "description": "Designed for JKUAT students, this offline-first academic companion tracks units, grades, and deadlines while providing a robust PDF library for study materials.",
+  "robots": {
+    "index": false
+  },
+  "accessibility": {
+    "addBypassLinks": false,
+    "ignoreReducedMotion": false
+  }
+}
