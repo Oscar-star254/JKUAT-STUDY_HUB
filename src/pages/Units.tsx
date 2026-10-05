@@ -1,14 +1,15 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { db } from '@/db/database';
 import type { Unit } from '@/types';
 import { UNIT_COLORS } from '@/types';
 import { useApp } from '@/context/AppContext';
 import { useLiveQuery } from 'dexie-react-hooks';
 import Modal, { Btn, Field, Input, Select } from '@/components/Modal';
-import { Plus, Edit2, Trash2, AlertTriangle, BookOpen } from 'lucide-react';
+import { Plus, Edit2, Trash2, AlertTriangle, BookOpen, FilePlus2, FileText, X } from 'lucide-react';
 
 const SEMESTERS = [1, 2, 3];
 const YEARS = [1, 2, 3, 4, 5];
+const MAX_PDF_SIZE_MB = 50;
 
 function emptyUnit(): Omit<Unit, 'id'> {
   return { code: '', title: '', lecturer: '', venue: '', creditHours: 3, year: 1, semester: 1, color: UNIT_COLORS[0] };
@@ -17,9 +18,13 @@ function emptyUnit(): Omit<Unit, 'id'> {
 export default function Units() {
   const { t } = useApp();
   const units = useLiveQuery(() => db.units.orderBy('code').toArray(), []) ?? [];
+  const pdfs = useLiveQuery(() => db.pdfs.toArray(), []) ?? [];
   const [modal, setModal] = useState<{ mode: 'add' | 'edit'; unit: Omit<Unit, 'id'> & { id?: number } } | null>(null);
   const [deleteId, setDeleteId] = useState<number | null>(null);
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [uploadUnitId, setUploadUnitId] = useState<number | null>(null);
+  const [uploadMessage, setUploadMessage] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   function openAdd() {
     setErrors({});
@@ -52,12 +57,54 @@ export default function Units() {
   }
 
   async function deleteUnit(id: number) {
+    const documentIds = (await db.pdfs.where('unitId').equals(id).primaryKeys()) as number[];
     await db.units.delete(id);
     // Clean up related data
     await db.assessments.where('unitId').equals(id).delete();
     await db.timetable.where('unitId').equals(id).delete();
     await db.notes.where('unitId').equals(id).delete();
+    await db.pdfs.where('unitId').equals(id).delete();
+    await db.annotations.bulkDelete(documentIds);
     setDeleteId(null);
+  }
+
+  function choosePDF(unitId: number) {
+    setUploadMessage(null);
+    setUploadUnitId(unitId);
+    fileInputRef.current?.click();
+  }
+
+  async function addPDFs(files: FileList | null) {
+    if (!files || uploadUnitId === null) return;
+    let added = 0;
+    for (const file of Array.from(files)) {
+      if (file.type !== 'application/pdf') {
+        setUploadMessage(`"${file.name}" is not a PDF file.`);
+        continue;
+      }
+      if (file.size > MAX_PDF_SIZE_MB * 1048576) {
+        setUploadMessage(`"${file.name}" exceeds the ${MAX_PDF_SIZE_MB} MB size limit.`);
+        continue;
+      }
+      await db.pdfs.add({
+        name: file.name.replace(/\.pdf$/i, ''),
+        unitId: uploadUnitId,
+        type: 'notes',
+        file: await file.arrayBuffer(),
+        size: file.size,
+        uploadedAt: new Date().toISOString(),
+        lastPage: 1,
+        lastZoom: 1,
+        tags: [],
+      });
+      added += 1;
+    }
+    if (added > 0) {
+      const unit = units.find(item => item.id === uploadUnitId);
+      setUploadMessage(`${added} PDF${added === 1 ? '' : 's'} added to ${unit?.code ?? 'the unit'}.`);
+    }
+    setUploadUnitId(null);
+    if (fileInputRef.current) fileInputRef.current.value = '';
   }
 
   function patch(key: keyof Unit, value: unknown) {
@@ -93,7 +140,28 @@ export default function Units() {
         >
           <Plus size={16} /> {t('add')} Unit
         </button>
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="application/pdf"
+          multiple
+          className="hidden"
+          onChange={e => addPDFs(e.target.files)}
+        />
       </div>
+
+      {uploadMessage && (
+        <div
+          className="flex items-center gap-2 rounded-xl border px-3 py-2.5 text-sm"
+          style={{ background: 'var(--bg-card)', borderColor: 'var(--border)', color: 'var(--fg-muted)' }}
+        >
+          <FileText size={16} style={{ color: 'var(--primary)' }} />
+          <span className="flex-1">{uploadMessage}</span>
+          <button onClick={() => setUploadMessage(null)} className="p-1" aria-label="Dismiss message">
+            <X size={14} />
+          </button>
+        </div>
+      )}
 
       {/* Units grouped by year/semester */}
       {units.length === 0 ? (
@@ -119,7 +187,14 @@ export default function Units() {
                 </p>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   {semUnits.map(u => (
-                    <UnitCard key={u.id} unit={u} onEdit={() => openEdit(u)} onDelete={() => setDeleteId(u.id!)} />
+                    <UnitCard
+                      key={u.id}
+                      unit={u}
+                      pdfCount={pdfs.filter(pdf => pdf.unitId === u.id).length}
+                      onAddPDF={() => choosePDF(u.id!)}
+                      onEdit={() => openEdit(u)}
+                      onDelete={() => setDeleteId(u.id!)}
+                    />
                   ))}
                 </div>
               </div>
@@ -231,7 +306,7 @@ export default function Units() {
         <div className="flex items-start gap-3">
           <AlertTriangle size={20} className="text-amber-500 shrink-0 mt-0.5" />
           <p className="text-sm" style={{ color: 'var(--fg-muted)' }}>
-            This will permanently delete the unit and all related assessments, timetable slots, and notes. This cannot be undone.
+            This will permanently delete the unit and all related PDFs, annotations, assessments, timetable slots, and notes. This cannot be undone.
           </p>
         </div>
       </Modal>
@@ -239,7 +314,13 @@ export default function Units() {
   );
 }
 
-function UnitCard({ unit, onEdit, onDelete }: { unit: Unit; onEdit: () => void; onDelete: () => void }) {
+function UnitCard({ unit, pdfCount, onAddPDF, onEdit, onDelete }: {
+  unit: Unit;
+  pdfCount: number;
+  onAddPDF: () => void;
+  onEdit: () => void;
+  onDelete: () => void;
+}) {
   return (
     <div
       className="rounded-2xl border p-4 flex flex-col gap-3 transition-all hover:shadow-md"
@@ -265,10 +346,18 @@ function UnitCard({ unit, onEdit, onDelete }: { unit: Unit; onEdit: () => void; 
         )}
       </div>
       <div className="flex gap-2 mt-auto">
-        <button onClick={onEdit} className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl text-xs font-medium border transition-all hover:bg-[color:var(--border)]" style={{ borderColor: 'var(--border)', color: 'var(--fg-muted)' }}>
-          <Edit2 size={13} /> Edit
+        <button
+          onClick={onAddPDF}
+          className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl text-xs font-semibold transition-all hover:opacity-90"
+          style={{ background: 'var(--primary)', color: 'var(--primary-fg)' }}
+        >
+          <FilePlus2 size={13} /> Add PDF
+          {pdfCount > 0 && <span className="opacity-70">({pdfCount})</span>}
         </button>
-        <button onClick={onDelete} className="p-2 rounded-xl border transition-all hover:bg-red-50 hover:border-red-200 hover:text-red-500" style={{ borderColor: 'var(--border)', color: 'var(--fg-muted)' }}>
+        <button onClick={onEdit} className="p-2 rounded-xl border transition-all hover:bg-[color:var(--border)]" style={{ borderColor: 'var(--border)', color: 'var(--fg-muted)' }} title="Edit unit" aria-label="Edit unit">
+          <Edit2 size={13} />
+        </button>
+        <button onClick={onDelete} className="p-2 rounded-xl border transition-all hover:bg-red-50 hover:border-red-200 hover:text-red-500" style={{ borderColor: 'var(--border)', color: 'var(--fg-muted)' }} title="Delete unit">
           <Trash2 size={13} />
         </button>
       </div>
