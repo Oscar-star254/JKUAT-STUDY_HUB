@@ -5,7 +5,7 @@ import { db } from '@/db/database';
 import type { PDFDoc, Unit } from '@/types';
 import { useApp } from '@/context/AppContext';
 import Modal, { Btn, Field, Input, Select } from '@/components/Modal';
-import { Upload, FileText, Trash2, Eye, Tag, HardDrive, Search, X } from 'lucide-react';
+import { Upload, FileText, Trash2, Eye, Tag, HardDrive, Search, X, FolderOpen } from 'lucide-react';
 
 const PDF_TYPES = ['notes', 'past-paper', 'assignment', 'textbook'] as const;
 const MAX_SIZE_MB = 50;
@@ -38,9 +38,13 @@ export default function Library() {
   const { t } = useApp();
   const navigate = useNavigate();
   const [filter, setFilter] = useState<string>('all');
+  const [unitFilter, setUnitFilter] = useState<string>('all');
   const [search, setSearch] = useState('');
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
+  const [pendingFiles, setPendingFiles] = useState<File[]>([]);
+  const [uploadUnitId, setUploadUnitId] = useState<number | undefined>();
+  const [uploadType, setUploadType] = useState<PDFDoc['type']>('notes');
   const [tagModal, setTagModal] = useState<{ doc: PDFDoc } | null>(null);
   const [deleteId, setDeleteId] = useState<number | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -52,14 +56,20 @@ export default function Library() {
 
   const filtered = docs.filter(d => {
     const matchType = filter === 'all' || d.type === filter;
+    const matchUnit = unitFilter === 'all'
+      || (unitFilter === 'uncategorised' ? !d.unitId : d.unitId === Number(unitFilter));
     const matchSearch = !search || d.name.toLowerCase().includes(search.toLowerCase());
-    return matchType && matchSearch;
+    return matchType && matchUnit && matchSearch;
   });
 
-  const handleFiles = useCallback(async (files: FileList | null) => {
+  const handleFiles = useCallback((files: FileList | null) => {
     if (!files) return;
     setUploadError(null);
-    setUploading(true);
+    if (units.length === 0) {
+      setUploadError('Add a unit before uploading PDFs so every document stays categorised.');
+      return;
+    }
+    const accepted: File[] = [];
     for (const file of Array.from(files)) {
       if (file.type !== 'application/pdf') {
         setUploadError(`"${file.name}" is not a PDF file.`);
@@ -69,10 +79,20 @@ export default function Library() {
         setUploadError(`"${file.name}" exceeds the ${MAX_SIZE_MB} MB size limit.`);
         continue;
       }
+      accepted.push(file);
+    }
+    if (accepted.length > 0) setPendingFiles(accepted);
+  }, [units.length]);
+
+  async function uploadPendingFiles() {
+    if (!uploadUnitId || pendingFiles.length === 0) return;
+    setUploading(true);
+    for (const file of pendingFiles) {
       const buffer = await file.arrayBuffer();
       await db.pdfs.add({
         name: file.name.replace(/\.pdf$/i, ''),
-        type: 'notes',
+        unitId: uploadUnitId,
+        type: uploadType,
         file: buffer,
         size: file.size,
         uploadedAt: new Date().toISOString(),
@@ -82,7 +102,19 @@ export default function Library() {
       });
     }
     setUploading(false);
-  }, []);
+    setPendingFiles([]);
+    setUploadUnitId(undefined);
+    setUploadType('notes');
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  }
+
+  function closeUploadModal() {
+    if (uploading) return;
+    setPendingFiles([]);
+    setUploadUnitId(undefined);
+    setUploadType('notes');
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  }
 
   const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -110,7 +142,13 @@ export default function Library() {
           </p>
         </div>
         <button
-          onClick={() => fileInputRef.current?.click()}
+          onClick={() => {
+            if (units.length === 0) {
+              setUploadError('Add a unit before uploading PDFs so every document stays categorised.');
+              return;
+            }
+            fileInputRef.current?.click();
+          }}
           className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold transition-all hover:opacity-90 shrink-0"
           style={{ background: 'var(--primary)', color: 'var(--primary-fg)', fontFamily: 'var(--font-display)' }}
           disabled={uploading}
@@ -141,7 +179,13 @@ export default function Library() {
         onDrop={handleDrop}
         onDragOver={e => { e.preventDefault(); setIsDragging(true); }}
         onDragLeave={() => setIsDragging(false)}
-        onClick={() => fileInputRef.current?.click()}
+        onClick={() => {
+          if (units.length === 0) {
+            setUploadError('Add a unit before uploading PDFs so every document stays categorised.');
+            return;
+          }
+          fileInputRef.current?.click();
+        }}
         className="border-2 border-dashed rounded-2xl p-8 text-center cursor-pointer transition-all"
         style={{
           borderColor: isDragging ? 'var(--accent)' : 'var(--border)',
@@ -170,6 +214,16 @@ export default function Library() {
           />
           {search && <button onClick={() => setSearch('')}><X size={14} style={{ color: 'var(--fg-muted)' }} /></button>}
         </div>
+        <Select
+          value={unitFilter}
+          onChange={e => setUnitFilter(e.target.value)}
+          className="w-full sm:w-auto sm:min-w-48"
+          aria-label="Filter PDFs by unit"
+        >
+          <option value="all">All units</option>
+          {units.map(unit => <option key={unit.id} value={unit.id}>{unit.code}</option>)}
+          {docs.some(doc => !doc.unitId) && <option value="uncategorised">Uncategorised</option>}
+        </Select>
         <div className="flex gap-1">
           {['all', ...PDF_TYPES].map(f => (
             <button
@@ -237,6 +291,14 @@ export default function Library() {
                       {unit.code}
                     </span>
                   )}
+                  {!unit && (
+                    <span
+                      className="text-[10px] px-2 py-0.5 rounded-full font-medium"
+                      style={{ background: 'var(--border)', color: 'var(--fg-muted)' }}
+                    >
+                      Uncategorised
+                    </span>
+                  )}
                 </div>
                 <p className="text-[11px]" style={{ color: 'var(--fg-muted)' }}>
                   {new Date(doc.uploadedAt).toLocaleDateString('en-KE', { day: 'numeric', month: 'short', year: 'numeric' })}
@@ -271,6 +333,46 @@ export default function Library() {
           })}
         </div>
       )}
+
+      {/* Categorised upload */}
+      <Modal
+        title="Add PDF to a unit"
+        open={pendingFiles.length > 0}
+        onClose={closeUploadModal}
+        footer={
+          <>
+            <Btn variant="ghost" onClick={closeUploadModal}>Cancel</Btn>
+            <Btn onClick={uploadPendingFiles} disabled={!uploadUnitId || uploading}>
+              {uploading ? 'Uploading…' : `Add ${pendingFiles.length} PDF${pendingFiles.length === 1 ? '' : 's'}`}
+            </Btn>
+          </>
+        }
+      >
+        <div className="space-y-4">
+          <div className="flex items-start gap-3 rounded-xl border p-3" style={{ borderColor: 'var(--border)', background: 'var(--bg)' }}>
+            <FolderOpen size={18} className="shrink-0 mt-0.5" style={{ color: 'var(--primary)' }} />
+            <div className="min-w-0">
+              <p className="text-sm font-medium" style={{ color: 'var(--fg)' }}>
+                {pendingFiles.length === 1 ? pendingFiles[0].name : `${pendingFiles.length} PDF files selected`}
+              </p>
+              <p className="text-xs mt-0.5" style={{ color: 'var(--fg-muted)' }}>
+                Select the unit where {pendingFiles.length === 1 ? 'this document belongs' : 'these documents belong'}.
+              </p>
+            </div>
+          </div>
+          <Field label="Unit" required>
+            <Select value={uploadUnitId ?? ''} onChange={e => setUploadUnitId(e.target.value ? Number(e.target.value) : undefined)}>
+              <option value="">Select a unit</option>
+              {units.map(unit => <option key={unit.id} value={unit.id}>{unit.code} · {unit.title}</option>)}
+            </Select>
+          </Field>
+          <Field label="Document Type">
+            <Select value={uploadType} onChange={e => setUploadType(e.target.value as PDFDoc['type'])}>
+              {PDF_TYPES.map(type => <option key={type} value={type}>{type}</option>)}
+            </Select>
+          </Field>
+        </div>
+      </Modal>
 
       {/* Tag modal */}
       {tagModal && (
