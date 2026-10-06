@@ -2,8 +2,10 @@ import { NavLink } from 'react-router-dom';
 import {
   LayoutDashboard, BookOpen, Layers, Calendar, BarChart2,
   FileText, Settings, Sun, Moon, Languages,
+  ShieldCheck, LogOut,
 } from 'lucide-react';
 import { useApp } from '@/context/AppContext';
+import { useAuth } from '@/context/AuthContext';
 
 const NAV_ITEMS = [
   { to: '/', icon: LayoutDashboard, labelKey: 'dashboard', end: true },
@@ -19,6 +21,10 @@ interface Props { onNavigate: () => void; }
 
 export default function Sidebar({ onNavigate }: Props) {
   const { t, dark, toggleDark, toggleLang, lang } = useApp();
+  const { profile, signOut } = useAuth();
+  const items = profile?.role === 'admin'
+    ? [...NAV_ITEMS, { to: '/admin', icon: ShieldCheck, labelKey: 'admin' }]
+    : NAV_ITEMS;
 
   return (
     <div className="flex flex-col h-full">
@@ -45,7 +51,7 @@ export default function Sidebar({ onNavigate }: Props) {
 
       {/* Nav items */}
       <nav className="flex-1 py-4 px-3 overflow-y-auto space-y-0.5">
-        {NAV_ITEMS.map(({ to, icon: Icon, labelKey, end }) => (
+        {items.map(({ to, icon: Icon, labelKey, end }) => (
           <NavLink
             key={to}
             to={to}
@@ -71,6 +77,10 @@ export default function Sidebar({ onNavigate }: Props) {
 
       {/* Bottom actions */}
       <div className="px-3 pb-4 space-y-1 border-t pt-3" style={{ borderColor: 'var(--border)' }}>
+        <div className="px-3 pb-2">
+          <p className="text-xs font-semibold truncate" style={{ color: 'var(--fg)' }}>{profile?.fullName || 'Study Hub user'}</p>
+          <p className="text-[10px] truncate" style={{ color: 'var(--fg-muted)' }}>{profile?.email}</p>
+        </div>
         <button
           onClick={toggleDark}
           className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all"
@@ -86,6 +96,14 @@ export default function Sidebar({ onNavigate }: Props) {
         >
           <Languages size={18} strokeWidth={1.8} />
           <span style={{ fontFamily: 'var(--font-display)' }}>{lang === 'en' ? 'Kiswahili' : 'English'}</span>
+        </button>
+        <button
+          onClick={signOut}
+          className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all"
+          style={{ color: 'var(--fg-muted)' }}
+        >
+          <LogOut size={18} strokeWidth={1.8} />
+          <span style={{ fontFamily: 'var(--font-display)' }}>Sign out</span>
         </button>
       </div>
     </div>
