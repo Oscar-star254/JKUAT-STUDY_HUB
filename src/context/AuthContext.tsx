@@ -8,6 +8,7 @@ interface AuthContextValue {
   profile: UserProfile | null;
   courses: Course[];
   loading: boolean;
+  authError: string | null;
   refreshProfile: () => Promise<void>;
   refreshCourses: () => Promise<void>;
   signOut: () => Promise<void>;
@@ -20,6 +21,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [courses, setCourses] = useState<Course[]>([]);
   const [loading, setLoading] = useState(true);
+  const [authError, setAuthError] = useState<string | null>(null);
 
   const refreshCourses = useCallback(async () => {
     try {
@@ -31,6 +33,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const refreshProfile = useCallback(async () => {
+    setAuthError(null);
     const { data: { session: current } } = await supabase.auth.getSession();
     if (!current) {
       setProfile(null);
@@ -41,27 +44,35 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setProfile(result.profile);
     } catch {
       const metadata = current.user.user_metadata;
-      const result = await apiRequest<{ profile: UserProfile }>('/profile', {
-        method: 'POST',
-        body: JSON.stringify({
-          fullName: metadata.full_name ?? '',
-          courseId: metadata.course_id,
-        }),
-      });
-      setProfile(result.profile);
+      try {
+        const result = await apiRequest<{ profile: UserProfile }>('/profile', {
+          method: 'POST',
+          body: JSON.stringify({ fullName: metadata.full_name ?? '' }),
+        });
+        setProfile(result.profile);
+      } catch (profileError) {
+        setProfile(null);
+        setAuthError((profileError as Error).message);
+        throw profileError;
+      }
     }
   }, []);
 
   useEffect(() => {
     supabase.auth.getSession().then(async ({ data }) => {
-      setSession(data.session);
-      await Promise.all([refreshCourses(), data.session ? refreshProfile() : Promise.resolve()]);
-      setLoading(false);
+      try {
+        setSession(data.session);
+        await Promise.all([refreshCourses(), data.session ? refreshProfile() : Promise.resolve()]);
+      } catch {
+        // The account setup error is exposed through authError for a recoverable UI.
+      } finally {
+        setLoading(false);
+      }
     });
     const { data: listener } = supabase.auth.onAuthStateChange((_event, nextSession) => {
       setSession(nextSession);
       if (!nextSession) setProfile(null);
-      else setTimeout(() => refreshProfile(), 0);
+      else setTimeout(() => refreshProfile().catch(() => {}), 0);
     });
     return () => listener.subscription.unsubscribe();
   }, [refreshCourses, refreshProfile]);
@@ -72,7 +83,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   return (
-    <AuthContext.Provider value={{ session, profile, courses, loading, refreshProfile, refreshCourses, signOut }}>
+    <AuthContext.Provider value={{ session, profile, courses, loading, authError, refreshProfile, refreshCourses, signOut }}>
       {children}
     </AuthContext.Provider>
   );
