@@ -22,7 +22,10 @@ export default function AuthPage() {
       : await supabase.auth.signUp({
           email,
           password,
-          options: { data: { full_name: fullName } },
+          options: {
+            data: { full_name: fullName },
+            emailRedirectTo: `${window.location.origin}/auth/confirm`,
+          },
         });
     setBusy(false);
     if (result.error) {
