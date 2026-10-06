@@ -10,6 +10,26 @@ export interface Unit {
   color: string;
   retake?: boolean;
   supplementary?: boolean;
+  courseId?: string;
+}
+
+export interface Course {
+  id: string;
+  name: string;
+  code: string;
+  active: boolean;
+  createdAt: string;
+}
+
+export interface UserProfile {
+  id: string;
+  email: string;
+  fullName: string;
+  courseId?: string;
+  role: 'admin' | 'user';
+  paymentStatus: 'pending' | 'paid';
+  suspended: boolean;
+  joinedAt: string;
 }
 
 export interface TimetableSlot {
