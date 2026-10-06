@@ -1,14 +1,11 @@
 import { useState } from 'react';
 import { BookOpen, LockKeyhole, ShieldCheck } from 'lucide-react';
-import { Field, Input, Select } from '@/components/Modal';
-import { useAuth } from '@/context/AuthContext';
+import { Field, Input } from '@/components/Modal';
 import { supabase } from '@/lib/supabase';
 
 export default function AuthPage() {
-  const { courses } = useAuth();
   const [mode, setMode] = useState<'signin' | 'signup'>('signin');
   const [fullName, setFullName] = useState('');
-  const [courseId, setCourseId] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
@@ -25,7 +22,7 @@ export default function AuthPage() {
       : await supabase.auth.signUp({
           email,
           password,
-          options: { data: { full_name: fullName, course_id: courseId } },
+          options: { data: { full_name: fullName } },
         });
     setBusy(false);
     if (result.error) {
@@ -66,23 +63,13 @@ export default function AuthPage() {
           </div>
           <p className="text-2xl font-bold font-display">{mode === 'signin' ? 'Welcome back' : 'Create your account'}</p>
           <p className="text-sm mt-1 mb-6" style={{ color: 'var(--fg-muted)' }}>
-            {mode === 'signin' ? 'Sign in to continue studying.' : 'Choose your course and set up your study space.'}
+            {mode === 'signin' ? 'Sign in to continue studying.' : 'Create your account, then choose your course.'}
           </p>
           <form onSubmit={submit} className="space-y-4">
             {mode === 'signup' && (
-              <>
-                <Field label="Full name" required>
-                  <Input value={fullName} onChange={e => setFullName(e.target.value)} required autoComplete="name" />
-                </Field>
-                <Field label="Course" required>
-                  <Select value={courseId} onChange={e => setCourseId(e.target.value)} required>
-                    <option value="">Select your course</option>
-                    {courses.filter(course => course.active).map(course => (
-                      <option key={course.id} value={course.id}>{course.code} · {course.name}</option>
-                    ))}
-                  </Select>
-                </Field>
-              </>
+              <Field label="Full name" required>
+                <Input value={fullName} onChange={e => setFullName(e.target.value)} required autoComplete="name" />
+              </Field>
             )}
             <Field label="Email" required>
               <Input type="email" value={email} onChange={e => setEmail(e.target.value)} required autoComplete="email" />
@@ -92,13 +79,10 @@ export default function AuthPage() {
             </Field>
             {error && <p className="text-sm text-red-500">{error}</p>}
             {message && <p className="text-sm text-emerald-600">{message}</p>}
-            <button type="submit" disabled={busy || (mode === 'signup' && courses.length === 0)} className="w-full py-3 rounded-xl text-sm font-semibold disabled:opacity-50" style={{ background: 'var(--primary)', color: 'var(--primary-fg)' }}>
+            <button type="submit" disabled={busy} className="w-full py-3 rounded-xl text-sm font-semibold disabled:opacity-50" style={{ background: 'var(--primary)', color: 'var(--primary-fg)' }}>
               {busy ? 'Please wait…' : mode === 'signin' ? 'Sign in' : 'Create account'}
             </button>
           </form>
-          {mode === 'signup' && courses.length === 0 && (
-            <p className="text-xs mt-3 text-amber-600">No active courses are available yet. The first administrator must add one.</p>
-          )}
           <button onClick={() => { setMode(mode === 'signin' ? 'signup' : 'signin'); setError(''); setMessage(''); }} className="w-full mt-4 text-sm font-medium" style={{ color: 'var(--fg-muted)' }}>
             {mode === 'signin' ? 'New here? Create an account' : 'Already have an account? Sign in'}
           </button>
