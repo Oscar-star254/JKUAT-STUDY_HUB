@@ -9,11 +9,34 @@ import Timetable from '@/pages/Timetable';
 import Grades from '@/pages/Grades';
 import Notes from '@/pages/Notes';
 import Settings from '@/pages/Settings';
+import Admin from '@/pages/Admin';
+import AuthPage from '@/pages/Auth';
+import Paywall from '@/pages/Paywall';
+import { AuthProvider, useAuth } from '@/context/AuthContext';
 
 export default function App() {
   return (
-    <AppProvider>
-      <BrowserRouter>
+    <AuthProvider>
+      <AppProvider>
+        <BrowserRouter>
+          <AppRoutes />
+        </BrowserRouter>
+      </AppProvider>
+    </AuthProvider>
+  );
+}
+
+function AppRoutes() {
+  const { session, profile, loading } = useAuth();
+
+  if (loading || (session && !profile)) {
+    return <div className="min-h-dvh grid place-items-center text-sm" style={{ background: 'var(--bg)', color: 'var(--fg-muted)' }}>Loading Study Hub…</div>;
+  }
+  if (!session) return <AuthPage />;
+  if (profile?.suspended) return <Paywall />;
+  if (profile?.paymentStatus !== 'paid' && profile?.role !== 'admin') return <Paywall />;
+
+  return (
         <Routes>
           <Route path="/" element={<Layout />}>
             <Route index element={<Dashboard />} />
@@ -23,12 +46,11 @@ export default function App() {
             <Route path="grades" element={<Grades />} />
             <Route path="notes" element={<Notes />} />
             <Route path="settings" element={<Settings />} />
+            {profile?.role === 'admin' && <Route path="admin" element={<Admin />} />}
             <Route path="*" element={<Navigate to="/" replace />} />
           </Route>
           {/* Viewer is fullscreen outside layout */}
           <Route path="/library/:id" element={<Viewer />} />
         </Routes>
-      </BrowserRouter>
-    </AppProvider>
   );
 }
