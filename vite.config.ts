@@ -26,9 +26,13 @@ react(),
       figmaMakeKitPlugin({ storiesGlob: '/src/**/*.stories.{ts,tsx,js,jsx}' }),
     ],
     resolve: {
+      dedupe: ['react', 'react-dom'],
       alias: {
         '@': path.resolve(__dirname, './src'),
       },
+    },
+    optimizeDeps: {
+      include: ['react', 'react-dom', 'react-dom/client'],
     },
     server: {
       host: process.env.FIGMA_DEV_SERVER_HOST || '0.0.0.0',
