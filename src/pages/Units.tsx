@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { db } from '@/db/database';
 import type { Unit } from '@/types';
 import { UNIT_COLORS } from '@/types';
@@ -6,18 +6,22 @@ import { useApp } from '@/context/AppContext';
 import { useLiveQuery } from 'dexie-react-hooks';
 import Modal, { Btn, Field, Input, Select } from '@/components/Modal';
 import { Plus, Edit2, Trash2, AlertTriangle, BookOpen, FilePlus2, FileText, X } from 'lucide-react';
+import { useAuth } from '@/context/AuthContext';
 
 const SEMESTERS = [1, 2, 3];
 const YEARS = [1, 2, 3, 4, 5];
 const MAX_PDF_SIZE_MB = 50;
 
-function emptyUnit(): Omit<Unit, 'id'> {
-  return { code: '', title: '', lecturer: '', venue: '', creditHours: 3, year: 1, semester: 1, color: UNIT_COLORS[0] };
+function emptyUnit(courseId?: string): Omit<Unit, 'id'> {
+  return { code: '', title: '', lecturer: '', venue: '', creditHours: 3, year: 1, semester: 1, color: UNIT_COLORS[0], courseId };
 }
 
 export default function Units() {
   const { t } = useApp();
-  const units = useLiveQuery(() => db.units.orderBy('code').toArray(), []) ?? [];
+  const { profile, courses } = useAuth();
+  const course = courses.find(item => item.id === profile?.courseId);
+  const allUnits = useLiveQuery(() => db.units.orderBy('code').toArray(), []) ?? [];
+  const units = allUnits.filter(unit => !profile?.courseId || unit.courseId === profile.courseId || !unit.courseId);
   const pdfs = useLiveQuery(() => db.pdfs.toArray(), []) ?? [];
   const [modal, setModal] = useState<{ mode: 'add' | 'edit'; unit: Omit<Unit, 'id'> & { id?: number } } | null>(null);
   const [deleteId, setDeleteId] = useState<number | null>(null);
@@ -26,9 +30,14 @@ export default function Units() {
   const [uploadMessage, setUploadMessage] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  useEffect(() => {
+    if (!profile?.courseId) return;
+    db.units.filter(unit => !unit.courseId).modify({ courseId: profile.courseId });
+  }, [profile?.courseId]);
+
   function openAdd() {
     setErrors({});
-    setModal({ mode: 'add', unit: emptyUnit() });
+    setModal({ mode: 'add', unit: emptyUnit(profile?.courseId) });
   }
 
   function openEdit(u: Unit) {
@@ -130,7 +139,7 @@ export default function Units() {
             {t('units')}
           </h1>
           <p className="text-sm" style={{ color: 'var(--fg-muted)' }}>
-            {units.length} unit{units.length !== 1 ? 's' : ''} enrolled
+            {course ? `${course.code} · ${course.name}` : 'Course not assigned'} · {units.length} unit{units.length !== 1 ? 's' : ''}
           </p>
         </div>
         <button
