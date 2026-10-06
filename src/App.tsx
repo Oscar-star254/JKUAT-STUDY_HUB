@@ -12,6 +12,7 @@ import Settings from '@/pages/Settings';
 import Admin from '@/pages/Admin';
 import AuthPage from '@/pages/Auth';
 import Paywall from '@/pages/Paywall';
+import CourseSetup from '@/pages/CourseSetup';
 import { AuthProvider, useAuth } from '@/context/AuthContext';
 
 export default function App() {
@@ -34,6 +35,8 @@ function AppRoutes() {
   }
   if (!session) return <AuthPage />;
   if (profile?.suspended) return <Paywall />;
+  if (!profile?.courseId) return <CourseSetup />;
+  // Administrators always bypass the one-time payment requirement.
   if (profile?.paymentStatus !== 'paid' && profile?.role !== 'admin') return <Paywall />;
 
   return (
