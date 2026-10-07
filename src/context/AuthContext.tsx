@@ -1,4 +1,7 @@
-import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react';
+import {
+  createContext, useCallback, useContext, useEffect, useMemo, useState,
+  useSyncExternalStore, type Context, type ReactNode,
+} from 'react';
 import type { Session } from '@supabase/supabase-js';
 import type { Course, UserProfile } from '@/types';
 import { apiRequest, supabase } from '@/lib/supabase';
@@ -14,7 +17,39 @@ interface AuthContextValue {
   signOut: () => Promise<void>;
 }
 
-const AuthContext = createContext<AuthContextValue | null>(null);
+const globalForAuth = globalThis as typeof globalThis & {
+  __jkuatStudyHubAuthContext?: Context<AuthContextValue | null>;
+  __jkuatStudyHubAuthValue?: AuthContextValue;
+  __jkuatStudyHubAuthListeners?: Set<() => void>;
+};
+
+const AuthContext = globalForAuth.__jkuatStudyHubAuthContext
+  ?? createContext<AuthContextValue | null>(null);
+
+globalForAuth.__jkuatStudyHubAuthContext = AuthContext;
+
+const authListeners = globalForAuth.__jkuatStudyHubAuthListeners ?? new Set<() => void>();
+globalForAuth.__jkuatStudyHubAuthListeners = authListeners;
+
+const emptyAuthValue: AuthContextValue = {
+  session: null,
+  profile: null,
+  courses: [],
+  loading: true,
+  authError: null,
+  refreshProfile: async () => {},
+  refreshCourses: async () => {},
+  signOut: async () => {},
+};
+
+function subscribeToAuth(listener: () => void) {
+  authListeners.add(listener);
+  return () => authListeners.delete(listener);
+}
+
+function getAuthSnapshot() {
+  return globalForAuth.__jkuatStudyHubAuthValue ?? emptyAuthValue;
+}
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
@@ -77,13 +112,30 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => listener.subscription.unsubscribe();
   }, [refreshCourses, refreshProfile]);
 
-  async function signOut() {
+  const signOut = useCallback(async () => {
     await supabase.auth.signOut();
     setProfile(null);
-  }
+  }, []);
+
+  const value = useMemo<AuthContextValue>(() => ({
+    session,
+    profile,
+    courses,
+    loading,
+    authError,
+    refreshProfile,
+    refreshCourses,
+    signOut,
+  }), [session, profile, courses, loading, authError, refreshProfile, refreshCourses, signOut]);
+
+  globalForAuth.__jkuatStudyHubAuthValue = value;
+
+  useEffect(() => {
+    authListeners.forEach(listener => listener());
+  }, [value]);
 
   return (
-    <AuthContext.Provider value={{ session, profile, courses, loading, authError, refreshProfile, refreshCourses, signOut }}>
+    <AuthContext.Provider value={value}>
       {children}
     </AuthContext.Provider>
   );
@@ -91,6 +143,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
 export function useAuth() {
   const context = useContext(AuthContext);
-  if (!context) throw new Error('useAuth must be used within AuthProvider');
-  return context;
+  const externalValue = useSyncExternalStore(subscribeToAuth, getAuthSnapshot, getAuthSnapshot);
+  return context ?? externalValue;
 }

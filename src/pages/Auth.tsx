@@ -11,6 +11,9 @@ export default function AuthPage() {
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
   const [busy, setBusy] = useState(false);
+  const [awaitingConfirmation, setAwaitingConfirmation] = useState(false);
+
+  const confirmationRedirect = `${window.location.origin}/auth/confirm`;
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
@@ -24,17 +27,43 @@ export default function AuthPage() {
           password,
           options: {
             data: { full_name: fullName },
-            emailRedirectTo: `${window.location.origin}/auth/confirm`,
+            emailRedirectTo: confirmationRedirect,
           },
         });
     setBusy(false);
     if (result.error) {
       setError(result.error.message);
+      if (mode === 'signin' && result.error.message.toLowerCase().includes('email not confirmed')) {
+        setAwaitingConfirmation(true);
+      }
       return;
     }
     if (mode === 'signup' && !result.data.session) {
-      setMessage('Check your email to confirm your account, then sign in.');
+      setAwaitingConfirmation(true);
+      setMessage(`We sent a confirmation link to ${email}. Check your inbox and spam folder.`);
     }
+  }
+
+  async function resendConfirmation() {
+    if (!email) {
+      setError('Enter the email address you registered with.');
+      return;
+    }
+    setBusy(true);
+    setError('');
+    setMessage('');
+    const { error: resendError } = await supabase.auth.resend({
+      type: 'signup',
+      email,
+      options: { emailRedirectTo: confirmationRedirect },
+    });
+    setBusy(false);
+    if (resendError) {
+      setError(resendError.message);
+      return;
+    }
+    setAwaitingConfirmation(true);
+    setMessage(`A new confirmation link was sent to ${email}. Check your inbox and spam folder.`);
   }
 
   return (
@@ -86,7 +115,22 @@ export default function AuthPage() {
               {busy ? 'Please wait…' : mode === 'signin' ? 'Sign in' : 'Create account'}
             </button>
           </form>
-          <button onClick={() => { setMode(mode === 'signin' ? 'signup' : 'signin'); setError(''); setMessage(''); }} className="w-full mt-4 text-sm font-medium" style={{ color: 'var(--fg-muted)' }}>
+          {awaitingConfirmation && (
+            <div className="mt-4 rounded-xl border p-3" style={{ borderColor: 'var(--border)', background: 'var(--bg)' }}>
+              <p className="text-xs" style={{ color: 'var(--fg-muted)' }}>
+                Email not received? Confirm the address above is correct, check spam, then request a fresh link.
+              </p>
+              <button
+                onClick={resendConfirmation}
+                disabled={busy || !email}
+                className="mt-2 text-sm font-semibold disabled:opacity-50"
+                style={{ color: 'var(--primary)' }}
+              >
+                Resend confirmation email
+              </button>
+            </div>
+          )}
+          <button onClick={() => { setMode(mode === 'signin' ? 'signup' : 'signin'); setError(''); setMessage(''); setAwaitingConfirmation(false); }} className="w-full mt-4 text-sm font-medium" style={{ color: 'var(--fg-muted)' }}>
             {mode === 'signin' ? 'New here? Create an account' : 'Already have an account? Sign in'}
           </button>
         </div>

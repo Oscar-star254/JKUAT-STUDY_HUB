@@ -1,10 +1,24 @@
-import { createClient } from '@supabase/supabase-js';
+import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { projectId, publicAnonKey } from '../../utils/supabase/info';
 
-export const supabase = createClient(
+const globalForSupabase = globalThis as typeof globalThis & {
+  __jkuatStudyHubSupabase?: SupabaseClient;
+};
+
+export const supabase = globalForSupabase.__jkuatStudyHubSupabase ?? createClient(
   `https://${projectId}.supabase.co`,
   publicAnonKey,
+  {
+    auth: {
+      storageKey: 'jkuat-study-hub-auth-v1',
+      persistSession: true,
+      autoRefreshToken: true,
+      detectSessionInUrl: true,
+    },
+  },
 );
+
+globalForSupabase.__jkuatStudyHubSupabase = supabase;
 
 export const apiBase = `https://${projectId}.supabase.co/functions/v1/make-server-28aff273`;
 
