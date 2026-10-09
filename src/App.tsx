@@ -1,6 +1,4 @@
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
-import { AppProvider } from '@/context/AppContext';
-import { AuthProvider, useAuth } from '@/context/AuthContext';
+import { Routes, Route, Navigate } from 'react-router-dom';
 import Layout from '@/components/Layout';
 import Dashboard from '@/pages/Dashboard';
 import Library from '@/pages/Library';
@@ -15,17 +13,10 @@ import AuthPage from '@/pages/Auth';
 import Paywall from '@/pages/Paywall';
 import CourseSetup from '@/pages/CourseSetup';
 import EmailConfirm from '@/pages/EmailConfirm';
+import { useAuth } from '@/context/AuthContext';
 
 export default function App() {
-  return (
-    <AuthProvider>
-      <AppProvider>
-        <BrowserRouter>
-          <AppRoutes />
-        </BrowserRouter>
-      </AppProvider>
-    </AuthProvider>
-  );
+  return <AppRoutes />;
 }
 
 function AppRoutes() {
